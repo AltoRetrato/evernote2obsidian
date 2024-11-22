@@ -74,9 +74,11 @@ The initial sync may take a while depending on the size of your data. The next s
 
 3. Run `evernote2obsidian.py`, then:
 - Run **Configuration** to set up input and output paths and conversion options.
-- Run **Scan Evernote** to see potential issues before conversion. You can then open the log and manually apply changes in the listed notes still on Evernote (such as simplifying or removing formatting). When you are satisfied, you can sync your data again (`evernote-backup sync`).
-- When you are ready, run **Export notes as Obsidian Markdown and attachments**.
+- Run **Scan Evernote** to see issues before conversion. Then check the log and manually fix any issue you want in the notes while they are still on Evernote (such as simplifying or removing formatting). When you are done, sync your data again (`evernote-backup sync`).
+- Run **Select Evernote notebooks to export**. Select just one or a few if you want to do a quick test.
+- Run **Export notes as Obsidian Markdown and attachments** when you are ready. Check the results in Obsidian.
 
 ## Acknowledgments
 [evernote-backup](https://github.com/vzhd1701/evernote-backup/): Great tool for creating a local backup of all of your Evernote data.
+
 [prompt_toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit): Used for building the TUI.
