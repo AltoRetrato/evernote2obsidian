@@ -73,10 +73,14 @@ evernote-backup sync
 The initial sync may take a while depending on the size of your data. The next syncs should be faster, as they only download changes.
 
 3. Run `evernote2obsidian.py`, then:
+
+![Screenshot of the main screen of evernote-backup2obsidian.py](/media/evernote-backup2obsidian.png)
 - Run **Configuration** to set up input and output paths and conversion options.
-- Run **Scan Evernote** to see issues before conversion. Then check the log and manually fix any issue you want in the notes while they are still on Evernote (such as simplifying or removing formatting). When you are done, sync your data again (`evernote-backup sync`).
+- Run **Scan Evernote database for issues** to see issues before conversion. Then check the log and manually fix any issue you want in the notes while they are still on Evernote (such as simplifying or removing formatting). When you are done, sync your data again (`evernote-backup sync`).
 - Run **Select Evernote notebooks to export**. Select just one or a few if you want to do a quick test.
 - Run **Export notes as Obsidian Markdown and attachments** when you are ready. Check the results in Obsidian.
+- Optionally, you can run **Export notes as HTML and attachments** to keep the original HTML data. This should preserve basically almost _all_ of your data (except for "tasks", as explained before). It can be used as another backup option, but editing your notes in Obsidian would become very cumbersome (specially tables), since you will be editing everything in HTML.
+- **Scan Obsidian Vault for issues** can help you find some issues in your vault when you use this or other migration tools.
 
 ## Acknowledgments
 [evernote-backup](https://github.com/vzhd1701/evernote-backup/): Great tool for creating a local backup of all of your Evernote data.
