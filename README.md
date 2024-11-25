@@ -4,17 +4,18 @@ This project aims to transfer your Evernote data to Obsidian with maximum fideli
 **HTML** (used by Evernote) and **Markdown** (`.md`, used by Obsidian) lack feature parity, making such conversion potentially lossy. Many "HTML to Markdown" and "Evernote to Obsidian" converters are already available, all of them (including this one) having their own limitations.
 
 The main files in this project are:
-- **`evernote-backup2obsidian.py`**, a program to convert Evernote notebooks (from a database created by [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown.
+- **`evernote-backup2obsidian.py`**: converts Evernote notebooks (from a database created by [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown, and check an Obsidian vault for issues.
 - `evernote2md.py`: a standalone module for converting HTML (vanilla or with Evernote-specific formatting) to Markdown.
 - `test_enex_conversion.py`: a script to convert HTML from an `.enex` file to Markdown using different Python modules, to assist in comparing the quality of the outputs. It also works as an example on how to use `evernote2md.py`.
 - `[Evernote formatting test note.enex](/media/Evernote formatting test note.enex)`: a sample Evernote export file with many Evernote features to help evaluate the output of the programs above and compare it to other tools.
 
 
 ## Features  
-  - **Quality of conversion:** this project was created because I could not find another one that can preserve as much of the original Evernote data as I wanted. See more details in the [comparison section](#comparison-with-other-tools-and-limitations) below.
+  - **Improved quality of conversion:** this project was created because I could not find another one that can preserve as much of the original Evernote data when converted to Obsidian as I wanted. See more details in the [comparison section](#comparison-with-other-tools-and-limitations) below.
   - **Text User Interface (TUI):** with menus, mouse support, and many user-configurable options.
   - **Log of Issues:** helps you addressing issues either before or after conversion.
-  - **Output formats:** Export your notes (and their attachments) as HTML or Markdown.
+  - **Output formats:** export your notes (and their attachments) as HTML or Markdown.
+  - **Detection of issues:** you can see issues before or after conversion, and even look for issues in an Obsidian vault converted from Evernote by another program.
 
 ![Screenshot of the main screen of evernote-backup2obsidian.py](/media/evernote-backup2obsidian.png)
 
