@@ -4,7 +4,7 @@ This project aims to transfer your Evernote data to Obsidian with maximum fideli
 **HTML** (used by Evernote) and **Markdown** (`.md`, used by Obsidian) lack feature parity, making such conversion potentially lossy. Many "HTML to Markdown" and "Evernote to Obsidian" converters are already available, all of them (including this one) having their own limitations.
 
 The main files in this project are:
-- **`evernote-backup2obsidian.py`**, a program to convert Evernote notebooks (from `.enex` files or [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown.
+- **`evernote-backup2obsidian.py`**, a program to convert Evernote notebooks (from a database created by [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown.
 - `evernote2md.py`: a standalone module for converting HTML (vanilla or with Evernote-specific formatting) to Markdown.
 - `test_enex_conversion.py`: a script to convert HTML from an `.enex` file to Markdown using different Python modules, to assist in comparing the quality of the outputs. It also works as an example on how to use `evernote2md.py`.
 - `[Evernote formatting test note.enex](/media/Evernote formatting test note.enex)`: a sample Evernote export file with many Evernote features to help evaluate the output of the programs above and compare it to other tools.
@@ -40,7 +40,7 @@ The [Obsidian Importer Plugin](https://github.com/obsidianmd/obsidian-importer/)
 
 ### Limitations of evernote2obsidian
 - **Platform:** Currently tested only on Windows 11, but should support Linux, Mac, and any other OS that can run Python.
-- **Tasks OR Links:** `evernote2obsidian` requires backing up your Evernote data with [evernote-backup](https://github.com/vzhd1701/evernote-backup/) to correctly convert note links, as it collects all necessary information via Evernote API. Unfortunately, it still doesn't support Evernote "tasks" (see [this issue](https://github.com/vzhd1701/evernote-backup/issues/39)). Tasks can be converted from `.enex` files, but then note links might not be properly converted since important link information is not available in those files.
+- **Tasks OR Links:** `evernote2obsidian` requires backing up your Evernote data with [evernote-backup](https://github.com/vzhd1701/evernote-backup/) to correctly convert note links, as it collects all necessary information via Evernote API. Unfortunately, it still doesn't support Evernote "tasks" (see [this issue](https://github.com/vzhd1701/evernote-backup/issues/39)). Tasks could be converted from `.enex` files, but then note links might not be properly converted since important link information is not available in those files. As I don't use tasks in Evernote, I chose to support links over tasks.
 - Some of the limitations from Obsidian Importer and YARLE (such as super/subscript, font colors, etc.) are simply features not supported by Markdown, yet they are supported in Obsidian with simple HTML tags. Unfortunately, since Obsidian doesn't support mixing Markdown and HTML tags, even if you try to have something like a superscript text in italics with `_<sup>superscript</sup>_`, your text will only appear as <sup>superscript</sup> (but not italic). A workaround is to use _more_ HTML tags, i.e., `<i><sup>superscript</sup></i>` produces <i><sup>superscript</sup></i>. That is something that the program _could_ but isn't doing at the moment.
 
 ---
