@@ -71,7 +71,7 @@ evernote-backup init-db --oauth
 evernote-backup sync
 ```
 
-The initial sync may take a while depending on the size of your data. The next syncs should be faster, as they only download changes.
+The initial sync may take a while depending on the size of your data. The next syncs should be faster, as they only download changes. If you authorized the app to access your data for a limited time (e.g., one day) and want to sync again, run `evernote-backup reauth --oauth`.
 
 3. Run `evernote2obsidian.py`, then:
 
