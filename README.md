@@ -4,9 +4,9 @@ This project aims to transfer your Evernote data to Obsidian with maximum fideli
 **HTML** (used by Evernote) and **Markdown** (`.md`, used by Obsidian) lack feature parity, making such conversion potentially lossy. Many "HTML to Markdown" and "Evernote to Obsidian" converters are already available, all of them (including this one) having their own limitations.
 
 The main files in this project are:
-- **`evernote-backup2obsidian.py`**: converts Evernote notebooks (from a database created by [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown, and check an Obsidian vault for issues.
-- `evernote2md.py`: a standalone module for converting HTML (vanilla or with Evernote-specific formatting) to Markdown.
-- `test_enex_conversion.py`: a script to convert HTML from an `.enex` file to Markdown using different Python modules, to assist in comparing the quality of the outputs. It also works as an example on how to use `evernote2md.py`.
+- **`evernote-backup2obsidian.py`**: converts Evernote notebooks (from a database created by [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown, and check an Obsidian vault for issues. This is what most users want to use.
+- `evernote2md.py`: a standalone module for converting HTML (vanilla or with Evernote-specific formatting) to Markdown. This one is used mostly by programmers.
+- `test_enex_conversion.py`: a script to convert HTML from an `.enex` file to Markdown using different Python modules, to assist in comparing the quality of the outputs. It also works as an example on how to use `evernote2md.py`. Used mostly by programmers.
 - `[Evernote formatting test note.enex](/media/Evernote formatting test note.enex)`: a sample Evernote export file with many Evernote features to help evaluate the output of the programs above and compare it to other tools.
 
 
@@ -21,14 +21,14 @@ The main files in this project are:
 
 ## Comparison with Other Tools and Limitations
 The [Obsidian Importer Plugin](https://github.com/obsidianmd/obsidian-importer/) might be good enough for you, if:
-- You have just a few notes and/or don't mind manually checking them all after conversion to find and fix issues.
+- You have just a few notes and/or don't mind manually checking them all after conversion to find and fix conversion issues.
 - Your notes are mainly in plain text, without features such as links for other notes, text colors and highlighting, image resizing, etc.
 - You don't care about some loss of formatting (and a small risk of losing some information) in your notes, and you prefer the convenience of using a plugin that already comes installed with Obsidian.
 
 On the other hand, you might want an alternative if:
 - You want to preserve as much data and formatting during conversion as possible.
 - Your notes use many Evernote / HTML features.
-- Even if some features can't be converted, you want to have a log of all notes and issues so you can manually check them (instead of having to check _all_ notes).
+- Even if some features can't be converted, you want to have a log of all notes and issues so you can manually check them (after or even before conversion).
 
 #### Other HTML to Markdown Python modules ([html2markdown](https://github.com/dlon/html2markdown), [html2text](https://github.com/Alir3z4/html2text/), [markdownify](https://github.com/matthewwithanm/python-markdownify), ...)
 It is somewhat unfair to compare this project, which understands the special formatting Evernote uses, with generic HTML to Markdown converters. Yet, even for "plain" HTML, some features are better supported by `evernote2md.py`, such as converting tables with merged cells, escaping of special Markdown characters, and more.
@@ -42,7 +42,7 @@ The [Obsidian Importer Plugin](https://github.com/obsidianmd/obsidian-importer/)
 ### Limitations of evernote2obsidian
 - **Platform:** Currently tested only on Windows 11, but should support Linux, Mac, and any other OS that can run Python.
 - **Tasks OR Links:** `evernote2obsidian` requires backing up your Evernote data with [evernote-backup](https://github.com/vzhd1701/evernote-backup/) to correctly convert note links, as it collects all necessary information via Evernote API. Unfortunately, it still doesn't support Evernote "tasks" (see [this issue](https://github.com/vzhd1701/evernote-backup/issues/39)). Tasks could be converted from `.enex` files, but those files lack information required to properly convert note links. As I don't use tasks in Evernote, I chose to support links over tasks.
-- Some of the limitations from Obsidian Importer and YARLE (such as super/subscript, font colors, etc.) are simply features not supported by Markdown, yet they are supported in Obsidian with simple HTML tags. Even though evernote2obsidian can optionally use those HTML tags, Obsidian doesn't support mixing Markdown and HTML tags. For example, if you try to have something like a superscript text in italics with `_<sup>superscript</sup>_`, your text will only appear as <sup>superscript</sup> (but not italic). A workaround is to use _more_ HTML tags, i.e., `<i><sup>superscript</sup></i>` produces <i><sup>superscript</sup></i>. That is something that the program _could_ but isn't doing at the moment (in order to keep your notes with as much Markdown as possible).
+- Some unsupported features in Markdown (such as superscript, subscript, font colors, etc.) are not converted by Obsidian Importer and YARLE. However, these features are supported in Obsidian through simple HTML tags. Although evernote2obsidian can optionally use these HTML tags, Obsidian's support for them can be inconsistent depending on the "viewing mode."<br/>For example, in "reading" mode, Obsidian supports mixing Markdown and HTML tags, such as creating superscript text in italics with `_<sup>superscript</sup>_`. However, in "editing" mode, the text will only appear as <sup>superscript</sup> (not italicized). A workaround is to use additional HTML tags. For instance, `<i><sup>superscript</sup></i>` produces <i><sup>superscript in italics</sup></i> in both reading and editing modes.<br/>This is something the program could handle but does not currently implement, as the aim is to retain as much Markdown as possible in your notes.
 
 ---
 
