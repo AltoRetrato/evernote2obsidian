@@ -9,7 +9,8 @@
 # This program converts an Evernote backup created with evernote-backup
 # (https://github.com/vzhd1701/evernote-backup) to Obsidian Markdown (or HTML).
 #
-# 2026.01.04  0.1.5, fixed some Pylance warnings
+# 2026.01.04  0.1.5, improved attachment handling and conversion robustness
+#                    (#13 by quiettype), fixed some Pylance warnings
 # 2025.08.18  0.1.3, fixed #9 "SyntaxWarning due to invalid escape sequences"
 # 2025.05.23  0.1.0, 1st release
 # 2024.10.08  0.0.1, 1st version
@@ -727,7 +728,7 @@ class Exporter:
         self.note_ext      = note_ext
 
 
-    def convert(self, content, guid_to_path, path_to_guid, hash_to_path, tasks, options):
+    def convert(self, note, content, guid_to_path, path_to_guid, hash_to_paths, tasks, options):
         raise NotImplementedError("Subclasses must implement this method")
 
 
