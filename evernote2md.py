@@ -8,12 +8,13 @@
 #
 # This is an Evernote HTML to Markdown converter.
 #
-# 2025.08.21  0.1.4, fix #8 "Crashes on notes with nested HTML tables"
-# 2025.08.18  0.1.3, fix #9 "SyntaxWarning due to invalid escape sequences"
+# 2026.01.04  0.1.5, fixed some Pylance warnings
+# 2025.08.21  0.1.4, fixed #8 "Crashes on notes with nested HTML tables"
+# 2025.08.18  0.1.3, fixed #9 "SyntaxWarning due to invalid escape sequences"
 # 2025.05.23  0.1.0, 1st release
 # 2024.11.19  0.0.1, 1st version
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 __author__  = "AltoRetrato"
 
 import os
@@ -36,7 +37,7 @@ block_level_elements = {
 
 class EvernoteHTMLToMarkdownConverter:
     def __init__(self, use_html=True):
-        self.soup            = None     # BeautifulSoup object
+        self.soup            = BeautifulSoup("", "html.parser")  # BeautifulSoup object (initialized later)
         self.use_html        = use_html # if True, use some HTML for things not supported by Obsidian Markdown
         self.url_pattern     = re.compile(r'\b(?:http|https|ftp)://\S+') # Regex pattern for URLs
 
@@ -276,7 +277,7 @@ class EvernoteHTMLToMarkdownConverter:
             return ""
 
         # If we are formatting an external link, format only the anchor text
-        url = None
+        url, lf = None, None
         if node.next and node.next.name == "a" and not content.startswith("[["):
             if (parts := re.findall(r'^\[(.*?)\]\((.*?)\)(.*)$', content, flags=re.S) ):
                 content, url, lf = parts[0]

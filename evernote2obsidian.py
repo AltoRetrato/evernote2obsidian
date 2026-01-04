@@ -9,11 +9,12 @@
 # This program converts an Evernote backup created with evernote-backup
 # (https://github.com/vzhd1701/evernote-backup) to Obsidian Markdown (or HTML).
 #
-# 2025.08.18  0.1.3, fix #9 "SyntaxWarning due to invalid escape sequences"
+# 2026.01.04  0.1.5, fixed some Pylance warnings
+# 2025.08.18  0.1.3, fixed #9 "SyntaxWarning due to invalid escape sequences"
 # 2025.05.23  0.1.0, 1st release
 # 2024.10.08  0.0.1, 1st version
 
-__version__ = "0.1.3"
+__version__ = "0.1.5"
 __author__  = "AltoRetrato"
 
 import os
@@ -25,7 +26,8 @@ import logging
 import sqlite3
 import mimetypes
 from   bs4         import BeautifulSoup
-from   typing      import Sequence, TypeVar
+from   bs4.element import Tag
+from   typing      import Sequence, TypeVar, cast
 from   datetime    import datetime, timezone
 from   zoneinfo    import ZoneInfo
 from   posixpath   import join as posix_join, normpath as posix_normpath, abspath as posix_abspath
@@ -136,7 +138,7 @@ def important(self, message, *args, **kwargs):
     if self.isEnabledFor(IMPORTANT):
         self._log(IMPORTANT, message, args, **kwargs)
 
-logging.Logger.important = important  # Add to Logger class
+setattr(logging.Logger, "important", important)  # Add to Logger class
 
 _logger = logging.getLogger("custom_logger")
 _log_handler = None # To track and remove file handler when needed
@@ -245,7 +247,7 @@ in the configuration, or sync Evernote data with:
         conn = sqlite3.connect(db_path)
     except Exception as e:
         log(logging.CRITICAL, f"Could not open database {db_path}")
-        log(logging.CRITICAL, "Exception:", e)
+        log(logging.CRITICAL, f"Exception: {e}")
         return
 
     return conn
@@ -589,8 +591,8 @@ def scan_db():
 
             # Another unsupported HTML content is nested tables
             soup = BeautifulSoup(note_content, "html.parser")
-            tables = soup.find_all("table")
-            if any([table.find("table") for table in tables]):
+            tables = cast(Sequence[Tag], soup.find_all("table"))
+            if any(table.find("table") for table in tables):
                 note_has_issue = issue(f"[{note.title}] Nested tables in note")
 
             # Check for formatting not supported in Markdown
@@ -768,7 +770,7 @@ class Exporter:
             return tasks
 
         def get_note_notecontent(row_note):
-            note, note_content, tasks = False, False, []
+            note, note_content, tasks = False, False, {}
             is_active, raw_note = row_note
             # Skip processing deleted notes according to config.
             if is_active or cfg["export_trash"]:
