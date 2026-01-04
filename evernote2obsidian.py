@@ -22,7 +22,7 @@ import json
 import lzma
 import pickle
 import logging
-import sqlite3  
+import sqlite3
 import mimetypes
 from   bs4         import BeautifulSoup
 from   typing      import Sequence, TypeVar
