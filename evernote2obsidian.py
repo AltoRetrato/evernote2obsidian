@@ -799,7 +799,7 @@ class Exporter:
         guid_to_path_rel = {} # Keep track of Evernote internal links to notes and files (relative path, used in links in the notes)
         guid_to_path_abs = {} # Keep track of Evernote internal links to notes and files (absolute path, used internally during conversion)
         path_to_guid     = {} # Keep track of Evernote internal links to notes and files
-        hash_to_path     = {} # Keep track of Evernote hashes to attachments
+        hash_to_paths    = {} # Keep track of Evernote hashes to attachments
         filenames_set    = set() # Keep track of filenames in lowercase
         notebook_data    = []
         notebooks        = get_notebooks_from_db(conn)
@@ -865,11 +865,11 @@ class Exporter:
                     #   - In case of HTML files, use "correct" format ([html file without ext]_files) ?
                     # - We're also not checking if there are links to each/all attachment in the note content. But should we?
                     attachment_folder_rel = "_resources"
-                    attachment_folder_abs = posix_join(notebook_path_abs, attachment_folder_rel)
-                    os.makedirs(attachment_folder_abs, exist_ok=True)
-                    attachment_path_rel   = posix_join(attachment_folder_rel, fn)
-                    attachment_path_rel   = get_unique_filename(attachment_path_rel, filenames_set)
-                    attachment_path_abs   = posix_join(notebook_path_abs, attachment_path_rel)
+                    # Create a unique full relative path for the attachment
+                    full_attachment_path_rel = posix_join(notebook_path_rel, attachment_folder_rel, fn)
+                    unique_full_path_rel     = get_unique_filename(full_attachment_path_rel, filenames_set)
+                    attachment_path_rel      = to_posix(os.path.relpath(unique_full_path_rel, notebook_path_rel)) # Path relative to note
+                    attachment_path_abs      = posix_join(self.output_folder, unique_full_path_rel)
 
                     fn = os.path.split(attachment_path_abs)[-1]
                     if resource.attributes.fileName and fn != resource.attributes.fileName:
@@ -881,15 +881,15 @@ class Exporter:
                     #     # Use RELATIVE paths in attachment_path if converting to Markdown or to HTML files
                     #     # Use ABSOLUTE paths in attachment_path if converting to .md files in HTML format
                     #     attachment_path_rel = attachment_path_abs
-                    filenames_set.add(attachment_path_rel.lower())
+                    filenames_set.add(unique_full_path_rel.lower())
                     path_to_guid[attachment_path_rel] = resource.guid
                     guid_to_path_rel[resource.guid]   = attachment_path_rel
                     guid_to_path_abs[resource.guid]   = attachment_path_abs
                     hash = int.from_bytes(resource.data.bodyHash) # Better int than .hex().zfill(32) ?
-                    # TO-DO:
-                    #  - Can we have one hash for two different files?
-                    #  - What should we do if we have the same file in multiple places?
-                    hash_to_path[hash] = attachment_path_rel
+                    # Store all paths for a given hash, keyed by the note's GUID
+                    if hash not in hash_to_paths:
+                        hash_to_paths[hash] = {}
+                    hash_to_paths[hash][note.guid] = attachment_path_rel
 
         # 2nd pass: export notes
         log(IMPORTANT, f"Exporting from {cfg['database']} to {self.format} into {self.output_folder}")
@@ -956,6 +956,7 @@ class Exporter:
                     attachment_path_abs = guid_to_path_abs[resource.guid]
 
                     # Save attachment file
+                    os.makedirs(os.path.dirname(attachment_path_abs), exist_ok=True)
                     if not cfg["overwrite"] and os.path.exists(attachment_path_abs):
                         log(logging.WARNING, f"    - Skipping, already exists: {attachment_path_abs}")
                     else:
@@ -1004,7 +1005,7 @@ class Exporter:
 
                     # Convert note body to HTML or Markdown
                     converted_content, conversion_issues = self.convert(
-                        note_content, guid_to_path_rel, path_to_guid, hash_to_path, task_groups, cfg)
+                        note, note_content, guid_to_path_rel, path_to_guid, hash_to_paths, task_groups, cfg)
 
                     if conversion_issues:
                         log(logging.WARNING, f'Issues converting "{note.title}" ({note_path_abs}):')
@@ -1042,7 +1043,7 @@ class Exporter_HTML(Exporter):
         )
 
 
-    def convert(self, content, guid_to_path, path_to_guid, hash_to_path, tasks, options):
+    def convert(self, note, content, guid_to_path, path_to_guid, hash_to_paths, tasks, options):
 
         errors = []
 
@@ -1050,10 +1051,20 @@ class Exporter_HTML(Exporter):
             en_media = regex_match[1]
             result = en_media
             type_  = re.findall('type="([^"]+)"', en_media)[0]
-            hash   = int(re.findall('hash="([^"]+)"', en_media)[0], 16)
-            if not (path := hash_to_path.get(hash)):
-                log(logging.ERROR, f"    - [ERROR] Path to media hash not found: {hash}")
-                path = hash
+            hash_hex = re.findall('hash="([^"]+)"', en_media)[0]
+            hash_int = int(hash_hex, 16)
+
+            # Find the correct path for this attachment in this specific note
+            note_hash_paths = hash_to_paths.get(hash_int, {})
+            path = note_hash_paths.get(note.guid)
+
+            if not path:
+                # Fallback to any available path if the specific one isn't found
+                path = next(iter(note_hash_paths.values()), None)
+                if path is None:
+                    log(logging.ERROR, f"    - [ERROR] Path to media hash not found: {hash_hex}")
+                    path = hash_hex # Use the hex string as a fallback path
+
             if type_.startswith("image"):
                     width  = (re.findall(' width="[^"]+"',  en_media) or [""])[0]
                     height = (re.findall(' height="[^"]+"', en_media) or [""])[0]
@@ -1086,7 +1097,7 @@ class Exporter_HTML(Exporter):
             return f'"{path}"'
 
         content = re.sub(r'<en-media ([^>]+)\s*/>', subs_en_media, content)
-        content = re.sub('"(?:evernote:///view/[^/]+/[^/]+/(.+?)/.+?|https://share.evernote.com/note/(.+?))"', subs_href, content)
+        content = re.sub(r'"(?:evernote:///view/[^/]+/[^/]+/(.+?)/.+?|https://share.evernote.com/note/(.+?))"', subs_href, content)
         return content, errors
 
 
@@ -1101,13 +1112,18 @@ class Exporter_MD(Exporter):
         self.converter = EvernoteHTMLToMarkdownConverter(use_html=cfg["html_with_md_ext"])
 
 
-    def convert(self, content, guid_to_path, path_to_guid, hash_to_path, tasks, options):
+    def convert(self, note, content, guid_to_path, path_to_guid, hash_to_paths, tasks, options):
+        # Create a simple {hash: path} dictionary for the current note for the converter
+        note_specific_hash_to_path = {
+            hash_val: paths.get(note.guid)
+            for hash_val, paths in hash_to_paths.items() if note.guid in paths
+        }
         markdown_content, warnings = self.converter.convert_html_to_markdown(
             content, 
             md_properties = [], # actually processed by parent of this
             tasks = tasks,
             guid_to_path = guid_to_path,
-            hash_to_path = hash_to_path,
+            hash_to_path = note_specific_hash_to_path,
             options      = options)
 
         # if warnings:

@@ -40,3 +40,12 @@ venv/
 *.json
 profile.html
 misc/
+
+# Local data, config, and logs
+en_backup.db
+config.json
+*.log
+
+# Output folders
+md/
+html/

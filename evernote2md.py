@@ -568,10 +568,15 @@ class EvernoteHTMLToMarkdownConverter:
             else:
                 # If next node is a <div>, <p> or <br>, add a new line, otherwise add a space
                 nl = "\n" if node.next_sibling and node.next_sibling.name in block_level_elements else " "
-                if (width):
-                    width  = int(float(width.strip("px")))
-                    result = f'{preview}[[{file_path}\\|{width}]]{nl}'
-                else: result = f'{preview}{result}{nl}'
+                if width:
+                    try:
+                        width_val = int(float(width.strip("px")))
+                        result = f'{preview}[[{file_path}\\|{width_val}]]{nl}'
+                    except ValueError:
+                        # Width is not a valid number (e.g., "auto"), so don't specify it
+                        result = f'{preview}{result}{nl}'
+                else:
+                    result = f'{preview}{result}{nl}'
         else:
             pass
             #self.warnings.append(f"Unsupported media type: {type_}")
