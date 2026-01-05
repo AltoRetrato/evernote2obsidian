@@ -8,13 +8,14 @@
 #
 # This is an Evernote HTML to Markdown converter.
 #
+# 2026.01.05  0.1.6, fixed #15, "Text inside <p> tags from old notes turning into a single line"
 # 2026.01.04  0.1.5, fixed some Pylance warnings
 # 2025.08.21  0.1.4, fixed #8 "Crashes on notes with nested HTML tables"
 # 2025.08.18  0.1.3, fixed #9 "SyntaxWarning due to invalid escape sequences"
 # 2025.05.23  0.1.0, 1st release
 # 2024.11.19  0.0.1, 1st version
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 __author__  = "AltoRetrato"
 
 import os
@@ -266,7 +267,11 @@ class EvernoteHTMLToMarkdownConverter:
                         and self.options.get("remove_green_link", True)):
                             pass # don't add color
                     elif self._use_html("text color / color:rgb"):
-                        return f'<span style="{style}">{content}</span>'
+                        content = f'<span style="{style}">{content}</span>'
+
+        if node.name == "p":
+            content = content.strip()
+            content = f'{content}\n\n'  # Ensure double new line after paragraphs
 
         return content
 
