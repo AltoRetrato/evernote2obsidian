@@ -9,13 +9,14 @@
 # This program converts an Evernote backup created with evernote-backup
 # (https://github.com/vzhd1701/evernote-backup) to Obsidian Markdown (or HTML).
 #
+# 2026.02.10  0.1.6, fixed #16 "Wrong/Missing image extension"
 # 2026.01.04  0.1.5, improved attachment handling and conversion robustness
 #                    (#13 by quiettype), fixed some Pylance warnings
 # 2025.08.18  0.1.3, fixed #9 "SyntaxWarning due to invalid escape sequences"
 # 2025.05.23  0.1.0, 1st release
 # 2024.10.08  0.0.1, 1st version
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 __author__  = "AltoRetrato"
 
 import os
@@ -853,7 +854,7 @@ class Exporter:
                     # and there can be issues in Obsidian displaying files with wrong extension.
                     # So, be sure attachment has a file name with correct extension.
                     fn        = resource.attributes.fileName or "unnamed"
-                    mime_ext  = mimetypes.guess_extension(resource.mime) # "image/png" -> ".png"
+                    mime_ext  = mimetypes.guess_extension(resource.mime, strict=False) # "image/png" -> ".png"
                     root, ext = os.path.splitext(fn)
                     if root.strip() == "":
                         root = "unnamed"
