@@ -8,6 +8,7 @@
 #
 # This is an Evernote HTML to Markdown converter.
 #
+# 2026.02.20  0.1.7, fixed #17, "Crash on empty media nodes"
 # 2026.01.05  0.1.6, fixed #15, "Text inside <p> tags from old notes turning into a single line"
 # 2026.01.04  0.1.5, fixed some Pylance warnings
 # 2025.08.21  0.1.4, fixed #8 "Crashes on notes with nested HTML tables"
@@ -15,7 +16,7 @@
 # 2025.05.23  0.1.0, 1st release
 # 2024.11.19  0.0.1, 1st version
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __author__  = "AltoRetrato"
 
 import os
@@ -518,7 +519,13 @@ class EvernoteHTMLToMarkdownConverter:
         result = ""
         type_  = node.get("type",  "")
         style  = node.get("style", "")
-        hash_hex = node.get("hash")
+        hash_hex = node.get("hash", "")
+        if not hash_hex:
+            # Seems like Evernote Web Clips (sometimes? always?) ends with these "empty" media notes:
+            # <br/><en-media hash="" type="" /><br/><en-media hash="" type="text/html" />
+            # See https://github.com/AltoRetrato/evernote2obsidian/issues/17
+            self.warnings.append(f"Media node without hash: {node}")
+            return ""
         hash_int = int(hash_hex, 16)
         if not (file_path := self.hash_to_path.get(hash_int)):
             file_path = hash_hex
