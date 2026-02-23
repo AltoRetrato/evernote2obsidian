@@ -54,7 +54,7 @@ The [Obsidian Importer Plugin](https://github.com/obsidianmd/obsidian-importer/)
 The main files in this project are:
 - **`evernote2obsidian.py`**: converts Evernote notebooks (from a database created by [evernote-backup](https://github.com/vzhd1701/evernote-backup/)) to Obsidian Markdown, and checks an Obsidian vault for issues. This is what most users want to use.
 - `evernote2md.py`: a standalone module for converting HTML (vanilla or with Evernote-specific formatting) to Markdown. Required by `evernote2obsidian.py`, but can be used in other programs.
-- [Evernote to Obsidian Conversion Test Note.enex](</extra/Evernote to Obsidian Conversion Test Note.enex>): an Evernote note to help test the conversion quality and compare the result with other programs.
+- [Evernote_to_Obsidian_Conversion_Test_Note.enex](</extra/Evernote_to_Obsidian_Conversion_Test_Note.enex>): an Evernote note to help test the conversion quality and compare the result with other programs.
 
 **How to install**:
 
