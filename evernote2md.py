@@ -19,11 +19,12 @@
 __version__ = "0.1.7"
 __author__  = "AltoRetrato"
 
+import logging
 import os
 import re
 from   bs4         import BeautifulSoup
 from   typing      import List, Tuple, Dict
-from   statistics  import mode
+from   statistics  import mode, StatisticsError
 from   collections import Counter
 
 
@@ -47,13 +48,19 @@ class EvernoteHTMLToMarkdownConverter:
     def convert_html_to_markdown(
             self,
             html_content: str,
-            md_properties: List = [],
-            tasks: Dict = {},
-            guid_to_path: Dict = {},
-            hash_to_path: Dict = {},
-            options:      Dict = {},
+            md_properties: List  = None,
+            tasks: Dict         = None,
+            guid_to_path: Dict  = None,
+            hash_to_path: Dict  = None,
+            options:      Dict  = None,
             ) -> Tuple[str, List]:
         """ Convert HTML content to Markdown format. """
+
+        if md_properties is None: md_properties = []
+        if tasks is None:         tasks = {}
+        if guid_to_path is None:  guid_to_path = {}
+        if hash_to_path is None:  hash_to_path = {}
+        if options is None:       options = {}
 
         self.tasks        = tasks        # dict. for tasks (provided by caller)
         self.guid_to_path = guid_to_path # dict. for links (provided by caller)
@@ -64,7 +71,7 @@ class EvernoteHTMLToMarkdownConverter:
         self.list_stack    = []
         self.indent_level  = 0        # used in lists, list items
         self.number_indent = {}       # used in ordered lists
-        self.warnings      = []       # list of warnings returned after conversion
+        self.warnings      = []       # list of (level, message) tuples returned after conversion
         self.inside_pre    = False    # True if processing content that should not be escaped
         self.inside_table  = False    # True if processing a table
 
@@ -75,6 +82,15 @@ class EvernoteHTMLToMarkdownConverter:
         for element in self.soup(['script', 'style']):
             element.decompose()
 
+        if self.options.get("hr_as_h1", False):
+            self._promote_hr_to_h1()
+
+        if self.options.get("normalize_heading_levels", True):
+            self._normalize_heading_levels()
+
+        if self.options.get("bold_as_heading", False):
+            self._promote_bold_to_heading()
+
         # Convert to markdown
         markdown = self._process_node(self.soup)
 
@@ -83,15 +99,15 @@ class EvernoteHTMLToMarkdownConverter:
             properties = ["---"] + md_properties + ["---\n"]
             markdown = '\n'.join(properties) + markdown
 
-        # Return a short(er) list of warnings
+        # Return a short(er) list of (level, message) warnings
         counter = Counter(self.warnings)
         sorted_warnings = sorted(
             counter.items(),
-            key=lambda x: (-x[1], x[0]) # First by count (descending), then by name (ascending)
+            key=lambda x: (-x[1], x[0][1]) # First by count (descending), then by message (ascending)
         )
         warnings = [
-            f"{item} [{count}x]" if count > 1 else item
-            for item, count in sorted_warnings
+            (level, f"{msg} [{count}x]") if count > 1 else (level, msg)
+            for (level, msg), count in sorted_warnings
         ]
 
         return markdown, warnings
@@ -160,7 +176,7 @@ class EvernoteHTMLToMarkdownConverter:
 
     def _use_html(self, html: str) -> bool:
         """Helper function that checks if HTML should be used or not (and warns in each case)."""
-        self.warnings.append(f"{'Added' if self.use_html else 'Removed'} unsupported HTML: {html}")
+        self.warnings.append((logging.INFO, f"{'Added' if self.use_html else 'Removed'} unsupported HTML: {html}"))
         return self.use_html
 
     def _process_div(self, node) -> str:
@@ -172,18 +188,19 @@ class EvernoteHTMLToMarkdownConverter:
         if "--en-tableofcontents:true" in style:
             # Shouldn't be too hard to implement, but might just not be worth it
             # since Obsidian can show a note outline in the right side bar.
-            self.warnings.append("Ignored Table of Contents (conversion not implemented)")
-            result = '==Evernote Table of Contents removed during conversion! In Obsidian, use "Open linked view" > "Open outline" instead.=='
+            self.warnings.append((logging.INFO, "Ignored Table of Contents (conversion not implemented)"))
+            return ""
         # Code block
         elif "--en-codeblock:true" in style:
             language = (re.findall("--en-syntaxLanguage:(.+?);", style) or [""])[0]
             result = f"```{language}\n{result}```"
         # Tasks
         elif "--en-task-group:true" in style:
-            id = re.findall("--en-id:([0-9a-f-]+);", style)[0]
-            if self.tasks and id in self.tasks:
-                  result = self.tasks[id]
-            else: result = f"- [ ] ==Could not find task(s) ID {id} during conversion=="
+            ids = re.findall("--en-id:([0-9a-f-]+);", style)
+            task_id = ids[0] if ids else None
+            if self.tasks and task_id and task_id in self.tasks:
+                  result = self.tasks[task_id]
+            else: return ""  # Empty task group (no tasks in database) — skip
         else:
 
             # Text alignment not supported in Markdown, but we can use some HTML...
@@ -210,10 +227,18 @@ class EvernoteHTMLToMarkdownConverter:
             #         Workaround: use a bullet list (works even if you set it on just the 1s line!).
             padding_left = re.findall(r"(?:padding|margin)-left\s*:\s*(\d+)\s*px", style)
             if padding_left:
-                indent = "    " * (int(padding_left[0])//40)
+                indent = "  " * (int(padding_left[0])//40)
                 result = f'{indent}{result}'
                 # If list item has \n in the content, add indent
                 result = result.replace("\n", f"\n{indent}")
+
+            # Collapse leading non-breaking / regular spaces to max 3 to avoid
+            # accidental code blocks (4+ spaces after a blank line = code).
+            stripped = result.lstrip(' \xa0')
+            leading = len(result) - len(stripped)
+            if leading >= 4:
+                indent = "  " * (leading // 5 or 1)
+                result = indent + stripped
 
         # An empty line in Evernote is a <div><br/></div>, which could create
         # a double line break in Markdown. So we strip any trailing new line.
@@ -262,11 +287,11 @@ class EvernoteHTMLToMarkdownConverter:
                         "^(evernote:///|https://www.evernote.com/|https://share.evernote.com/note/).+",
                         node.parent.get("href", "")
                     )
-                    if (   style == 'color:rgb(105, 170, 53);' # Green/yellowish color of internal links
-                        or style == "color:rgb(24, 168, 65);--inversion-type-color:simple;" # Green color
-                        and internal_link
-                        and self.options.get("remove_green_link", True)):
-                            pass # don't add color
+                    if (internal_link
+                        and self.options.get("remove_green_link", True)
+                        and style in ('color:rgb(105, 170, 53);',
+                                      'color:rgb(24, 168, 65);--inversion-type-color:simple;')):
+                            pass  # green internal-link color — strip it
                     elif self._use_html("text color / color:rgb"):
                         content = f'<span style="{style}">{content}</span>'
 
@@ -284,7 +309,8 @@ class EvernoteHTMLToMarkdownConverter:
 
         # If we are formatting an external link, format only the anchor text
         url, lf = None, None
-        if node.next and node.next.name == "a" and not content.startswith("[["):
+        nxt = node.find_next_sibling()
+        if nxt and nxt.name == "a" and not content.startswith("[["):
             if (parts := re.findall(r'^\[(.*?)\]\((.*?)\)(.*)$', content, flags=re.S) ):
                 content, url, lf = parts[0]
 
@@ -301,7 +327,11 @@ class EvernoteHTMLToMarkdownConverter:
         elif node.name in ("s", "del"):
             result = f'{space_begin}~~{stripped_content}~~{space_end}'
         elif node.name == "blockquote":
-            result = f"> " + "\n> ".join(stripped_content.split("\n")) + "\n"
+            quoted_lines = ['> [!quote] ']
+            for line in stripped_content.split('\n'):
+                s = line.rstrip()
+                quoted_lines.append(f'> {s}' if s else '>')
+            result = '\n'.join(quoted_lines) + '\n\n'
         elif node.name == "code":
             if "\n" in content:
                   result = f'```\n{content}\n```\n'
@@ -320,7 +350,10 @@ class EvernoteHTMLToMarkdownConverter:
         """Convert HTML headers to Markdown headers."""
         level = int(node.name[1])
         content = self._process_node_children(node)
-        return f'{"#" * level} {content}\n'
+        stripped = content.strip().replace("**", "")
+        if not stripped:
+            return ""
+        return f'{"#" * level} {stripped}\n'
 
     def _process_checkbox(self, node) -> str:
         """Convert Evernote to-do checkboxes to Markdown."""
@@ -333,10 +366,14 @@ class EvernoteHTMLToMarkdownConverter:
 
     def _process_list(self, node) -> str:
         """Process ordered and unordered lists."""
-        self.list_stack.append(node.name)
-        self.indent_level += 1
-        if node.name == "ol":
-            self.number_indent[self.indent_level] = 0
+        has_direct_items = any(
+            child.name == "li" for child in node.children if hasattr(child, "name")
+        )
+        if has_direct_items:
+            self.list_stack.append(node.name)
+            self.indent_level += 1
+            if node.name == "ol":
+                self.number_indent[self.indent_level] = int(node.get("start", 1)) - 1
 
         result = ''
         # If there is a <ul> or <ol> inside a <li>, add a new line at the start
@@ -345,8 +382,9 @@ class EvernoteHTMLToMarkdownConverter:
         for child in node.children:
             result += self._process_node(child)
 
-        self.indent_level -= 1
-        self.list_stack.pop()
+        if has_direct_items:
+            self.indent_level -= 1
+            self.list_stack.pop()
         return result
 
     def _process_list_item(self, node) -> str:
@@ -373,7 +411,8 @@ class EvernoteHTMLToMarkdownConverter:
         """Convert HTML table to Markdown table."""
         # We can't converted nested tables. In that case, just return the HTML.
         if node.find("table"):
-            self.warnings.append("Nested tables are not supported, returning HTML")
+            level = logging.INFO if self._is_web_clip_note() else logging.WARNING
+            self.warnings.append((level, "Nested tables are not supported, returning HTML"))
             return str(node)
 
         # Convert HTML table to Markdown table.
@@ -428,7 +467,8 @@ class EvernoteHTMLToMarkdownConverter:
                         col_num += 1
                 # Adjust row_spans at the end of a row, if needed
                 for x in range(col_num, max_cols):
-                    row_spans[x] -= 1
+                    if row_spans[x] > 0:
+                        row_spans[x] -= 1
 
             row_num += 1
 
@@ -439,17 +479,29 @@ class EvernoteHTMLToMarkdownConverter:
 
         # Step 5: Add separators / column alignments
         if result:
-            # Use the most common ("mode") alignment of each column as separator
-            separators = [mode([grid[r][c]["align"] for r in range(len(grid))]) for c in range(max_cols)]
+            def _safe_mode(values, default=LEFT):
+                try:
+                    return mode(values)
+                except StatisticsError:
+                    return default
+            separators = [_safe_mode([grid[r][c]["align"] for r in range(len(grid))]) for c in range(max_cols)]
             result.insert(1, f"| {' | '.join(separators)} |")
 
         self.inside_table = False
         return "\n" + "\n".join(result) + "\n"
 
+    _unicode_spaces = re.compile(r'[\u00A0\u2007\u202F\u2060\uFEFF]+')
+
+    def _is_web_clip_note(self) -> bool:
+        """Return True when converting content from a web clip note."""
+        return bool(self.options.get("_is_web_clip_note", False))
+
     def _process_link(self, node) -> str:
         """Convert HTML links to Markdown links."""
-        content = self._process_node_children(node)
+        content = self._unicode_spaces.sub(' ', self._process_node_children(node))
         href    = node.get('href', '')
+        # Prevent accidental Obsidian ==highlight== parsing inside link labels.
+        content = content.replace("==", r"\=\=")
         # https://help.obsidian.md/syntax#Escape+blank+spaces+in+links
         # (even though spaces in Evernote links are already escaped with %20)
         if " " in href:
@@ -462,7 +514,7 @@ class EvernoteHTMLToMarkdownConverter:
         # Linked note - preview
         #   <div style="--en-richlink:true; --en-href:[...]; --en-title:[...]; --en-viewAs:evernote-note-snippet-preview;[...]">
         #   <a href="[...]" rev="en_rl_small">A linked note</a></div>
-        preview = "!" if "evernote-note-snippet-preview" in node.parent.get("style","") else ""
+        preview = ""
         escape  = "\\" if self.inside_table else ""
 
         style = None
@@ -480,15 +532,24 @@ class EvernoteHTMLToMarkdownConverter:
            or (guid := re.match("https://www.evernote.com/[^/]+/[^/]+/[^/]+/[^/]+/([0-9a-f-]+)", href)) \
            or (guid := re.match("https://share.evernote.com/note/(.+)", href)):
             if not (path := self.guid_to_path.get(guid[1])):
-                path = content
-                self.warnings.append(f"Path to link GUID not found: {guid[1]} ({content})")
+                deleted_guid_to_title = self.options.get("_deleted_guid_to_title", {})
+                if deleted_guid_to_title.get(guid[1]):
+                    path = deleted_guid_to_title[guid[1]]
+                    path = self._unicode_spaces.sub(' ', path).strip()
+                    path = path.replace('|', ' - ').replace('[', '(').replace(']', ')')
+                    self.warnings.append((logging.INFO, f"Path to link GUID not found in active export, using deleted note title: {guid[1]} ({path})"))
+                else:
+                    path = content
+                    self.warnings.append((logging.WARNING, f"Path to link GUID not found: {guid[1]} ({content})"))
+            # Remove .md extension from path for internal links
+            path_without_ext = path[:-3] if path.lower().endswith('.md') else path
             # Escaping links can get ugly pretty quickly...
             # At this point, square brackets were already escaped,
             # but they don't need to be for internal links, so we remove them...
             content = content.replace(r"\[", "[").replace(r"\]", "]")
             if style:
-                  return f'<span style="{style}">{preview}[[{path}{escape}|{content}]]</span>'
-            else: return f'{preview}[[{path}{escape}|{content}]]'
+                  return f'<span style="{style}">{preview}[[{path_without_ext}{escape}]]</span>'
+            else: return f'{preview}[[{path_without_ext}{escape}]]'
 
         # Return external link
         if style:
@@ -506,13 +567,94 @@ class EvernoteHTMLToMarkdownConverter:
         title = node.get('title', '') 
         if src.startswith("data:image"):
             # Base64 images are exported with <img> tag
-            self.warnings.append(f"Added base64 image")
+            self.warnings.append((logging.INFO, "Added base64 image"))
             alt_   = f' alt="{alt}"'     if alt   else ""
             title_ = f' title="{title}"' if title else ""
             return f'<img src="{src}"{alt_}{title_} />'
         if src.startswith('/'):
             src = f'./_resources{src}'
         return f'![{title or alt}]({src})'
+
+    def _promote_hr_to_h1(self):
+        """Replace <div>text</div><hr/> with <h1>text</h1> in the parsed soup."""
+        for hr in list(self.soup.find_all('hr')):
+            prev = hr.find_previous_sibling()
+            if not prev or prev.name != 'div':
+                continue
+            text = prev.get_text(strip=True)
+            if not text or prev.find(['div', 'table', 'ul', 'ol', 'en-media', 'img']):
+                continue
+            nxt = hr.find_next_sibling()
+            h1 = self.soup.new_tag('h1')
+            h1.string = text
+            prev.replace_with(h1)
+            hr.decompose()
+            if nxt and nxt.name and not nxt.get_text(strip=True):
+                nxt.decompose()
+
+    @staticmethod
+    def _is_bold_element(tag):
+        """Check if a tag is visually bold (<b>, <strong>, or font-weight:bold span)."""
+        if not hasattr(tag, 'name'):
+            return False
+        if tag.name in ('b', 'strong'):
+            return True
+        if tag.name == 'span':
+            style = tag.get('style', '')
+            if 'font-weight' in style and ('bold' in style or '700' in style):
+                return True
+        return False
+
+    def _promote_bold_to_heading(self):
+        """In notes with no headings, convert bold-only divs to heading tags."""
+        if self.soup.find(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+            return
+        for div in list(self.soup.find_all('div')):
+            children = [c for c in div.children if str(c).strip()]
+            if len(children) != 1:
+                continue
+            child = children[0]
+            if not self._is_bold_element(child):
+                continue
+            text = child.get_text(strip=True)
+            if not text or len(text) > 80:
+                continue
+            h1 = self.soup.new_tag('h1')
+            h1.string = text
+            div.replace_with(h1)
+
+    def _normalize_heading_levels(self):
+        """Close gaps in heading hierarchy (e.g. h1→h3 becomes h1→h2)."""
+        headings = self.soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
+        if not headings:
+            return
+        prev_orig = 0
+        prev_new  = 0
+        level_map = {}
+        for h in headings:
+            orig = int(h.name[1])
+            if orig < prev_orig:
+                level_map = {k: v for k, v in level_map.items() if k <= orig}
+            if orig in level_map:
+                new = level_map[orig]
+            elif orig > prev_new + 1:
+                new = prev_new + 1
+                level_map[orig] = new
+            else:
+                new = orig
+            prev_orig = orig
+            prev_new  = new
+            if new != orig:
+                h.name = f'h{new}'
+
+    @staticmethod
+    def _has_adjacent_pdf(node) -> bool:
+        """Check if the previous or next sibling is also a PDF en-media tag."""
+        for sibling in (node.previous_sibling, node.next_sibling):
+            if (sibling and sibling.name == "en-media"
+                    and "application/pdf" in sibling.get("type", "")):
+                return True
+        return False
 
     def _process_media(self, node) -> str:
         """Convert Evernote media to Obsidian Markdown."""
@@ -524,12 +666,20 @@ class EvernoteHTMLToMarkdownConverter:
             # Seems like Evernote Web Clips (sometimes? always?) ends with these "empty" media notes:
             # <br/><en-media hash="" type="" /><br/><en-media hash="" type="text/html" />
             # See https://github.com/AltoRetrato/evernote2obsidian/issues/17
-            self.warnings.append(f"Media node without hash: {node}")
+            self.warnings.append((logging.WARNING, f"Media node without hash: {node}"))
             return ""
-        hash_int = int(hash_hex, 16)
-        if not (file_path := self.hash_to_path.get(hash_int)):
+        # Handle UUID format hashes (with hyphens) by removing them
+        hash_hex_clean = hash_hex.replace("-", "")
+        try:
+            hash_int = int(hash_hex_clean, 16)
+        except ValueError:
+            hash_int = None
+        if hash_int is not None and (file_path := self.hash_to_path.get(hash_int)):
+            pass
+        else:
             file_path = hash_hex
-            self.warnings.append(f"Path to media hash not found: {hash_hex}")
+            level = logging.INFO if self._is_web_clip_note() else logging.WARNING
+            self.warnings.append((level, f"Path to media hash not found: {hash_hex}"))
             # TO-DO: this happened on a few (4?) notes where the media hash
             # in <resource> and <en-media> where different (Evernote bug?).
             # It could be interesting to list <resource>
@@ -554,8 +704,11 @@ class EvernoteHTMLToMarkdownConverter:
             # as an attachment, so we disable the preview.
             if not style and "autopx" in node.get("height", ""):
                 preview = ""
-            pdf_view    = self.options.get("pdf_view", "default")
-            pdf_preview = {"default": preview, "title": "", "preview": "!"}.get(pdf_view, preview)
+            pdf_view    = self.options.get("pdf_view", "hybrid")
+            if pdf_view == "hybrid":
+                pdf_preview = "" if self._has_adjacent_pdf(node) else preview
+            else:
+                pdf_preview = {"default": preview, "title": "", "preview": "!"}.get(pdf_view, preview)
             result  = f"{pdf_preview}{result}\n"
         elif type_.startswith("image/"):
             width = node.get("width","")
@@ -575,7 +728,7 @@ class EvernoteHTMLToMarkdownConverter:
                     else: result = f'<div style="text-align: right;"><img src="{file_path}"></div>\n'
                     # <img src="..." style="display: block; margin-left: auto; margin-right: 0;">
             elif ("--en-imageAlignment:fullWidth" in style and
-                  self._use_html("image alignment (right)")):
+                  self._use_html("image alignment (fullWidth)")):
                     result = f'<img src="{file_path}" style="width: 100%;">\n'
             else:
                 # If next node is a <div>, <p> or <br>, add a new line, otherwise add a space
@@ -589,9 +742,12 @@ class EvernoteHTMLToMarkdownConverter:
                         result = f'{preview}{result}{nl}'
                 else:
                     result = f'{preview}{result}{nl}'
-        else:
-            pass
-            #self.warnings.append(f"Unsupported media type: {type_}")
+        elif type_ == "application/octet-stream":
+            _IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.tiff', '.tif', '.ico'}
+            ext = os.path.splitext(file_name)[1].lower()
+            if ext in _IMAGE_EXTS:
+                nl = "\n" if node.next_sibling and node.next_sibling.name in block_level_elements else " "
+                result = f'{preview}{result}{nl}'
         return result
 
     def _process_node_children(self, node) -> str:
@@ -615,10 +771,6 @@ class EvernoteHTMLToMarkdownConverter:
         # Escape all _ preceeded by nothing or a space and followed by a non-space character
         part = re.sub(r"(^|\s)([_]+)(?=\S)", lambda m: m.group(1) + "\\" + "\\".join(m.group(2)), part)
 
-        # Escape instances of * _ when they are followed by a non-space character
-        # Works in editing mode, but not always in reading mode (e.g., "1 * 2 * 3")
-        # text = re.sub(r"([*_^]+)(\S)", lambda m: "\\" + "\\".join(m.group(1)) + m.group(2), text)
-
         # Escape "%%"
         part = part.replace("%%", "%\\%")
 
@@ -634,21 +786,11 @@ class EvernoteHTMLToMarkdownConverter:
         # Escape sequences of two or more = ~ followed by a non-space character
         part = re.sub(r"([=~]{2,})(?=\S)", lambda m: "\\" + "\\".join(m.group(1)), part)
 
-        # Escape sequences of three or more - *
-        #text = re.sub("([-*]{3,})", lambda m: "\\" + "\\".join(m.group(1)), text)
-
         # Escape - + = > # | when they appear at the start of a line (even if preceeded by spaces)
         part = re.sub(r"(?m)^(\s*)([\-+=>#|])", r"\1\\\2", part)
 
         # Escape ordered / numbered lists (e.g.: 1. ... => 1\. ...)
         part = re.sub(r"(?m)^(\s*\d+)(\.\s+)", r"\1\\\2", part)
-
-        # If not escaping $ above / previously, these two regexes
-        # give a better result when using only editing view.
-        # # Escape single dollar signs pair to avoid inline math
-        # part = re.sub(r"\$(?!\s)([^$]+)(?<!\s)\$", r"\$\1$", part)
-        # # Escape sequences of two or more $
-        # part = re.sub(r"([$]{2,})", lambda m: "\\" + "\\".join(m.group(1)), part)
 
         if self.inside_table:
             part = part.replace("|", r"\|")
@@ -662,7 +804,7 @@ class EvernoteHTMLToMarkdownConverter:
             return ''
 
         # Do not escape text from <pre>, <code> or <a> tags
-        if self.inside_pre: # or (node.parent and node.parent.name == "a"):
+        if self.inside_pre:
             return text
 
         # Split the text into parts, separating URLs and other text
