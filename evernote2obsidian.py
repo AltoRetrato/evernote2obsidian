@@ -834,10 +834,13 @@ class Exporter:
 
                 # Create unique RELATIVE note path from notebook and note title
                 safe_name     = safe_path(f"{note.title}{self.note_ext}")
-                safe_name     = get_unique_filename(safe_name, filenames_set)
                 if cfg["links_with_folders"]:
-                      note_path_rel = posix_join(notebook_path_rel, safe_name)
-                else: note_path_rel = safe_name
+                    candidate     = posix_join(notebook_path_rel, safe_name)
+                    note_path_rel = get_unique_filename(candidate, filenames_set)
+                    safe_name     = note_path_rel.rsplit("/", 1)[-1]
+                else:
+                    note_path_rel = get_unique_filename(safe_name, filenames_set)
+                    safe_name     = note_path_rel
                 note_path_abs = posix_join(notebook_path_abs, safe_name)
                 filenames_set.add(note_path_rel.lower())
                 path_to_guid    [note_path_rel] = note.guid
