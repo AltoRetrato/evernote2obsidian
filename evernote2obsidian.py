@@ -770,6 +770,8 @@ class Exporter:
         if option is None:     return False
         if option == "Cancel": return True
 
+        export_start = datetime.now()
+
         if not (conn := open_db(cfg['database'])):
             return False
 
@@ -1066,6 +1068,15 @@ class Exporter:
                 log(logging.ERROR, error)
 
         conn.close()
+
+        export_end = datetime.now()
+        duration = export_end - export_start
+        hours, remainder = divmod(int(duration.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        log(IMPORTANT, f"  Start:    {export_start.strftime('%Y-%m-%d %H:%M:%S')}")
+        log(IMPORTANT, f"  End:      {export_end.strftime('%Y-%m-%d %H:%M:%S')}")
+        log(IMPORTANT, f"  Duration: {hours:02d}:{minutes:02d}:{seconds:02d}")
+
         input("\n[ENTER] to continue.")
         return True
 
