@@ -21,10 +21,15 @@ __author__  = "AltoRetrato"
 
 import os
 import re
+import sys
 from   bs4         import BeautifulSoup
 from   typing      import List, Tuple, Dict
 from   statistics  import mode
 from   collections import Counter
+
+# Some Evernote notes have extremely deeply nested <div> elements.
+# Increase the recursion limit to handle them without crashing.
+sys.setrecursionlimit(10000)
 
 
 # Set of block tags in Evernote / HTML (and maybe one or two extras that help with the logic of the code)
@@ -385,11 +390,17 @@ class EvernoteHTMLToMarkdownConverter:
         CENTER     = ":-:"
         RIGHT      = "--:"
 
+        def safe_int(value, default=1):
+            try:
+                return max(1, int(value))
+            except (ValueError, TypeError):
+                return default
+
         # Step 1: Count rows and maximum number of columns
         rows = node.find_all('tr')
         for row in rows:
             cols = row.find_all(["th", "td"])
-            current_cols = sum(int(cell.get("colspan", 1)) for cell in cols)
+            current_cols = sum(safe_int(cell.get("colspan", 1)) for cell in cols)
             max_cols = max(max_cols, current_cols)
 
         # Step 2: Initialize table grid and row_spans
@@ -413,22 +424,25 @@ class EvernoteHTMLToMarkdownConverter:
                 col_num = 0  # Column number of the current cell
                 for cell in cols:
                     # Move past any active rowspans from previous rows
-                    while row_spans[col_num] > 0:
+                    while col_num < max_cols and row_spans[col_num] > 0:
                         row_spans[col_num] -= 1
                         col_num += 1
                     # Get cell content
                     cell_content = self._process_node_children(cell).rstrip("\n")
-                    add_to_grid(col_num, row_num, cell_content, cell)
+                    if col_num < max_cols:
+                        add_to_grid(col_num, row_num, cell_content, cell)
                     # Skip empty cells (with current alignment) if there is a colspan or rowspan
-                    col_span = int(cell.get("colspan", "1"))
-                    row_span = int(cell.get("rowspan", "1"))
+                    col_span = safe_int(cell.get("colspan", "1"))
+                    row_span = safe_int(cell.get("rowspan", "1"))
                     for x in range(col_span):
-                        if row_span > 1:
-                            row_spans[col_num] += row_span -1
+                        if col_num < max_cols:
+                            if row_span > 1:
+                                row_spans[col_num] += row_span -1
                         col_num += 1
                 # Adjust row_spans at the end of a row, if needed
                 for x in range(col_num, max_cols):
-                    row_spans[x] -= 1
+                    if row_spans[x] > 0:
+                        row_spans[x] -= 1
 
             row_num += 1
 
