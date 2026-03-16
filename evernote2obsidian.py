@@ -9,6 +9,7 @@
 # This program converts an Evernote backup created with evernote-backup
 # (https://github.com/vzhd1701/evernote-backup) to Obsidian Markdown (or HTML).
 #
+# 2026.03.16  0.1.7, fixed #19 "Preserve notes with duplicate titles"
 # 2026.02.10  0.1.6, fixed #16 "Wrong/Missing image extension"
 # 2026.01.04  0.1.5, improved attachment handling and conversion robustness
 #                    (#13 by quiettype), fixed some Pylance warnings
@@ -16,7 +17,7 @@
 # 2025.05.23  0.1.0, 1st release
 # 2024.10.08  0.0.1, 1st version
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __author__  = "AltoRetrato"
 
 import os
@@ -834,10 +835,13 @@ class Exporter:
 
                 # Create unique RELATIVE note path from notebook and note title
                 safe_name     = safe_path(f"{note.title}{self.note_ext}")
-                safe_name     = get_unique_filename(safe_name, filenames_set)
                 if cfg["links_with_folders"]:
-                      note_path_rel = posix_join(notebook_path_rel, safe_name)
-                else: note_path_rel = safe_name
+                    candidate     = posix_join(notebook_path_rel, safe_name)
+                    note_path_rel = get_unique_filename(candidate, filenames_set)
+                    safe_name     = note_path_rel.rsplit("/", 1)[-1]
+                else:
+                    note_path_rel = get_unique_filename(safe_name, filenames_set)
+                    safe_name     = note_path_rel
                 note_path_abs = posix_join(notebook_path_abs, safe_name)
                 filenames_set.add(note_path_rel.lower())
                 path_to_guid    [note_path_rel] = note.guid
