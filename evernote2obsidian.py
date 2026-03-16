@@ -745,6 +745,13 @@ def get_unique_filename(filename, existing_files):
         unique_filename = f"{name}({counter}){extension}"
         counter += 1
 
+    # Truncate the filename component if it exceeds the filesystem limit
+    parts = unique_filename.rsplit("/", 1)
+    if len(parts) == 2:
+        unique_filename = parts[0] + "/" + truncate_filename(parts[1])
+    else:
+        unique_filename = truncate_filename(unique_filename)
+
     return unique_filename
 
 
