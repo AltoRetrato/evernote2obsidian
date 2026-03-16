@@ -540,7 +540,12 @@ class EvernoteHTMLToMarkdownConverter:
             # See https://github.com/AltoRetrato/evernote2obsidian/issues/17
             self.warnings.append(f"Media node without hash: {node}")
             return ""
-        hash_int = int(hash_hex, 16)
+        # Some hashes contain hyphens (UUID format); strip them for hex parsing
+        try:
+            hash_int = int(hash_hex.replace("-", ""), 16)
+        except ValueError:
+            self.warnings.append(f"Invalid media hash format: {hash_hex}")
+            hash_int = None
         if not (file_path := self.hash_to_path.get(hash_int)):
             file_path = hash_hex
             self.warnings.append(f"Path to media hash not found: {hash_hex}")
