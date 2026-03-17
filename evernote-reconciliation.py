@@ -146,6 +146,16 @@ def main():
 
     conn.close()
 
+    # Split into matched and mismatched
+    def has_mismatch(r):
+        return (
+            (r["md_delta"] is not None and r["md_delta"] != 0)
+            or (r["html_delta"] is not None and r["html_delta"] != 0)
+        )
+
+    matched = [r for r in rows if not has_mismatch(r)]
+    mismatched = [r for r in rows if has_mismatch(r)]
+
     # Column widths
     col_name_w = max(8, max((len(r["name"]) for r in rows), default=0))
     num_w = 10  # width for numeric columns
@@ -162,69 +172,79 @@ def main():
             return "0"
         return f"*{val:+,}*"
 
-    # Print header
-    header_line = (
-        f"{'Notebook':<{col_name_w}}  "
-        f"{'DB':>{num_w}}  "
-        f"{'MD':>{num_w}}  "
-        f"{'MD Delta':>{num_w}}  "
-        f"{'HTML':>{num_w}}  "
-        f"{'HTML Delta':>{num_w}}"
-    )
-    print(header_line)
-    print("-" * len(header_line))
-
-    # Print rows
-    total_db = 0
-    total_md = 0
-    total_html = 0
-    mismatches = 0
-
-    for r in rows:
-        md_delta_str = fmt_delta(r["md_delta"])
-        html_delta_str = fmt_delta(r["html_delta"])
-
-        has_issue = (
-            (r["md_delta"] is not None and r["md_delta"] != 0)
-            or (r["html_delta"] is not None and r["html_delta"] != 0)
+    def print_header():
+        header_line = (
+            f"{'Notebook':<{col_name_w}}  "
+            f"{'DB':>{num_w}}  "
+            f"{'MD':>{num_w}}  "
+            f"{'MD Delta':>{num_w}}  "
+            f"{'HTML':>{num_w}}  "
+            f"{'HTML Delta':>{num_w}}"
         )
-        if has_issue:
-            mismatches += 1
+        print(header_line)
+        print("-" * len(header_line))
+        return header_line
 
-        marker = " <<" if has_issue else ""
-
-        line = (
+    def print_row(r):
+        return (
             f"{r['name']:<{col_name_w}}  "
             f"{fmt_num(r['db']):>{num_w}}  "
             f"{fmt_num(r['md']):>{num_w}}  "
-            f"{md_delta_str:>{num_w}}  "
+            f"{fmt_delta(r['md_delta']):>{num_w}}  "
             f"{fmt_num(r['html']):>{num_w}}  "
-            f"{html_delta_str:>{num_w}}"
-            f"{marker}"
+            f"{fmt_delta(r['html_delta']):>{num_w}}"
         )
-        print(line)
 
-        total_db += r["db"]
-        total_md += r["md"] if r["md"] is not None else 0
-        total_html += r["html"] if r["html"] is not None else 0
+    def subtotal(section_rows, label):
+        s_db = sum(r["db"] for r in section_rows)
+        s_md = sum(r["md"] for r in section_rows if r["md"] is not None)
+        s_html = sum(r["html"] for r in section_rows if r["html"] is not None)
+        return (
+            f"{label:<{col_name_w}}  "
+            f"{s_db:>{num_w},}  "
+            f"{s_md:>{num_w},}  "
+            f"{fmt_delta(s_md - s_db):>{num_w}}  "
+            f"{s_html:>{num_w},}  "
+            f"{fmt_delta(s_html - s_db):>{num_w}}"
+        )
 
-    # Totals
+    # Reconciled notebooks
+    print(f"RECONCILED ({len(matched)} notebooks)")
+    header_line = print_header()
+    for r in matched:
+        print(print_row(r))
     print("-" * len(header_line))
-    total_md_delta = total_md - total_db
-    total_html_delta = total_html - total_db
-    line = (
-        f"{'TOTAL':<{col_name_w}}  "
-        f"{total_db:>{num_w},}  "
-        f"{total_md:>{num_w},}  "
-        f"{fmt_delta(total_md_delta):>{num_w}}  "
-        f"{total_html:>{num_w},}  "
-        f"{fmt_delta(total_html_delta):>{num_w}}"
-    )
-    print(line)
+    print(subtotal(matched, "Subtotal"))
     print()
 
-    if mismatches:
-        print(f"  {mismatches} notebook(s) with mismatches (marked with <<)")
+    # Mismatched notebooks
+    if mismatched:
+        print(f"MISMATCHED ({len(mismatched)} notebooks)")
+        print_header()
+        for r in mismatched:
+            print(print_row(r))
+        print("-" * len(header_line))
+        print(subtotal(mismatched, "Subtotal"))
+        print()
+
+    # Grand total
+    total_db = sum(r["db"] for r in rows)
+    total_md = sum(r["md"] for r in rows if r["md"] is not None)
+    total_html = sum(r["html"] for r in rows if r["html"] is not None)
+    print("=" * len(header_line))
+    total_line = (
+        f"{'GRAND TOTAL':<{col_name_w}}  "
+        f"{total_db:>{num_w},}  "
+        f"{total_md:>{num_w},}  "
+        f"{fmt_delta(total_md - total_db):>{num_w}}  "
+        f"{total_html:>{num_w},}  "
+        f"{fmt_delta(total_html - total_db):>{num_w}}"
+    )
+    print(total_line)
+    print()
+
+    if mismatched:
+        print(f"  {len(mismatched)} notebook(s) with mismatches.")
     else:
         print("  All notebook counts match.")
     print()
