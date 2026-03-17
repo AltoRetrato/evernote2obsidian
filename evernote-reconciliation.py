@@ -26,6 +26,7 @@ import os
 import re
 import sys
 import sqlite3
+from collections import Counter
 
 
 # ---------------------------------------------------------------------------
@@ -109,15 +110,14 @@ def list_files_in_dir(base_folder, notebook_rel_path, extension):
     """List filenames (without extension) in a notebook directory, excluding _resources."""
     folder = os.path.join(base_folder, notebook_rel_path)
     if not os.path.isdir(folder):
-        return set()
-    names = set()
+        return []
+    names = []
     for entry in os.listdir(folder):
         if entry == "_resources":
             continue
         full = os.path.join(folder, entry)
         if os.path.isfile(full) and entry.lower().endswith(extension):
-            # Strip extension to get the note name
-            names.add(entry[:-(len(extension))])
+            names.append(entry[:-(len(extension))])
     return names
 
 
@@ -375,39 +375,58 @@ def notebook_drilldown(cfg, rows):
             conn = sqlite3.connect(db_path)
             titles = get_db_note_titles(conn, nb["guid"], export_trash)
             conn.close()
-            # Convert to the filename-safe form for comparison
-            return set(db_title_to_filename(t) for t in titles)
+            return [db_title_to_filename(t) for t in titles]
         elif source == "MD":
             return list_files_in_dir(md_folder, nb["rel_path"], ".md")
         elif source == "HTML":
             return list_files_in_dir(html_folder, nb["rel_path"], ".html")
-        return set()
+        return []
 
     titles_a = get_titles(source_a)
     titles_b = get_titles(source_b)
 
-    only_in_a = sorted(titles_a - titles_b, key=str.lower)
-    only_in_b = sorted(titles_b - titles_a, key=str.lower)
+    # Use Counter (multiset) to handle duplicate titles correctly
+    counter_a = Counter(titles_a)
+    counter_b = Counter(titles_b)
+
+    # Subtract to find extras in each direction
+    only_in_a_counter = counter_a - counter_b  # in A but not (enough) in B
+    only_in_b_counter = counter_b - counter_a  # in B but not (enough) in A
+
+    # Expand back to a sorted list with counts shown for duplicates
+    def expand_counter(ctr):
+        result = []
+        for title in sorted(ctr, key=str.lower):
+            count = ctr[title]
+            if count == 1:
+                result.append(title)
+            else:
+                result.append(f"{title}  (x{count})")
+        return result
+
+    only_in_a = expand_counter(only_in_a_counter)
+    only_in_b = expand_counter(only_in_b_counter)
+    total_only_a = sum(only_in_a_counter.values())
+    total_only_b = sum(only_in_b_counter.values())
 
     print(f"Notebook: {nb['name']}")
     print(f"Comparing: {source_a} ({len(titles_a)} notes) vs {source_b} ({len(titles_b)} notes)")
     print()
 
     if only_in_a:
-        print(f"In {source_a} but not in {source_b} ({len(only_in_a)}):")
+        print(f"In {source_a} but not in {source_b} ({total_only_a}):")
         for title in only_in_a:
             print(f"  - {title}")
         print()
 
     if only_in_b:
-        print(f"In {source_b} but not in {source_a} ({len(only_in_b)}):")
+        print(f"In {source_b} but not in {source_a} ({total_only_b}):")
         for title in only_in_b:
             print(f"  - {title}")
         print()
 
     if not only_in_a and not only_in_b:
-        print("  No differences found (filenames match, count difference may be")
-        print("  due to duplicate titles or filename truncation).")
+        print("  No differences found.")
         print()
 
 
