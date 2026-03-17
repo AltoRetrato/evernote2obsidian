@@ -415,15 +415,31 @@ def notebook_drilldown(cfg, rows):
 # Main
 # ---------------------------------------------------------------------------
 
+def print_usage():
+    print("evernote-reconciliation.py")
+    print()
+    print("Reconcile note counts between Evernote backup DB and export folders.")
+    print("Reads config.json from the script directory for paths.")
+    print()
+    print("Usage:")
+    print("  python evernote-reconciliation.py --all   Full reconciliation table")
+    print("  python evernote-reconciliation.py --nb    Drill into a mismatched notebook")
+    print()
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Reconcile note counts between Evernote backup and export folders."
+        description="Reconcile note counts between Evernote backup and export folders.",
+        add_help=False,
     )
-    parser.add_argument(
-        "--nb", action="store_true",
-        help="Drill into a mismatched notebook to find missing notes"
-    )
+    parser.add_argument("--all", action="store_true", help="Show full reconciliation table")
+    parser.add_argument("--nb", action="store_true", help="Drill into a mismatched notebook")
+    parser.add_argument("-h", "--help", action="store_true", help="Show usage")
     args = parser.parse_args()
+
+    if not args.all and not args.nb:
+        print_usage()
+        return
 
     cfg = load_config()
     rows = build_rows(cfg)
