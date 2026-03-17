@@ -147,11 +147,9 @@ def main():
     conn.close()
 
     # Split into matched and mismatched
+    # All three counts (db, md, html) must be equal to reconcile
     def has_mismatch(r):
-        return (
-            (r["md_delta"] is not None and r["md_delta"] != 0)
-            or (r["html_delta"] is not None and r["html_delta"] != 0)
-        )
+        return r["md"] != r["db"] or r["html"] != r["db"]
 
     matched = [r for r in rows if not has_mismatch(r)]
     mismatched = [r for r in rows if has_mismatch(r)]
