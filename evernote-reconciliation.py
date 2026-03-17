@@ -142,6 +142,23 @@ def db_title_to_filename(title):
     return safe_path(title)
 
 
+# Regex to strip dedup suffixes like (1), (2) and truncation hashes like _abcd1234
+_DEDUP_SUFFIX = re.compile(r"\(\d+\)$")
+_TRUNC_HASH = re.compile(r"_[0-9a-f]{8}$")
+NORMALIZE_LEN = 55
+
+
+def normalize_title(name):
+    """Normalize a filename stem for fuzzy matching.
+
+    Strips dedup suffixes (1), truncation hashes _abcd1234, then
+    takes the first NORMALIZE_LEN characters for prefix matching.
+    """
+    name = _DEDUP_SUFFIX.sub("", name)
+    name = _TRUNC_HASH.sub("", name)
+    return name[:NORMALIZE_LEN]
+
+
 # ---------------------------------------------------------------------------
 # Shared: build notebook rows
 # ---------------------------------------------------------------------------
@@ -382,18 +399,16 @@ def notebook_drilldown(cfg, rows):
             return list_files_in_dir(html_folder, nb["rel_path"], ".html")
         return []
 
-    titles_a = get_titles(source_a)
-    titles_b = get_titles(source_b)
+    raw_a = get_titles(source_a)
+    raw_b = get_titles(source_b)
 
-    # Use Counter (multiset) to handle duplicate titles correctly
-    counter_a = Counter(titles_a)
-    counter_b = Counter(titles_b)
+    # Normalize titles for comparison (strips dedup suffixes, truncation hashes, prefix match)
+    norm_a = Counter(normalize_title(t) for t in raw_a)
+    norm_b = Counter(normalize_title(t) for t in raw_b)
 
-    # Subtract to find extras in each direction
-    only_in_a_counter = counter_a - counter_b  # in A but not (enough) in B
-    only_in_b_counter = counter_b - counter_a  # in B but not (enough) in A
+    only_in_a_counter = norm_a - norm_b
+    only_in_b_counter = norm_b - norm_a
 
-    # Expand back to a sorted list with counts shown for duplicates
     def expand_counter(ctr):
         result = []
         for title in sorted(ctr, key=str.lower):
@@ -410,7 +425,8 @@ def notebook_drilldown(cfg, rows):
     total_only_b = sum(only_in_b_counter.values())
 
     print(f"Notebook: {nb['name']}")
-    print(f"Comparing: {source_a} ({len(titles_a)} notes) vs {source_b} ({len(titles_b)} notes)")
+    print(f"Comparing: {source_a} ({len(raw_a)} notes) vs {source_b} ({len(raw_b)} notes)")
+    print(f"(matching on first {NORMALIZE_LEN} chars, ignoring dedup/truncation suffixes)")
     print()
 
     if only_in_a:
