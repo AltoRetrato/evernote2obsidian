@@ -13,8 +13,14 @@ Reads config.json from the same directory as this script to locate:
 Produces a table comparing note counts per notebook across all three
 sources, highlighting any discrepancies.
 
+
+
+Usage:
+  python evernote-reconciliation.py        Show reconciliation table
+  python evernote-reconciliation.py --nb   Drill into a mismatched notebook
 """
 
+import argparse
 import json
 import os
 import re
@@ -81,7 +87,7 @@ def notebook_dir_name(stack, name):
 
 
 # ---------------------------------------------------------------------------
-# Filesystem counting
+# Filesystem helpers
 # ---------------------------------------------------------------------------
 
 def count_files_in_dir(base_folder, notebook_rel_path, extension):
@@ -99,13 +105,49 @@ def count_files_in_dir(base_folder, notebook_rel_path, extension):
     return count
 
 
+def list_files_in_dir(base_folder, notebook_rel_path, extension):
+    """List filenames (without extension) in a notebook directory, excluding _resources."""
+    folder = os.path.join(base_folder, notebook_rel_path)
+    if not os.path.isdir(folder):
+        return set()
+    names = set()
+    for entry in os.listdir(folder):
+        if entry == "_resources":
+            continue
+        full = os.path.join(folder, entry)
+        if os.path.isfile(full) and entry.lower().endswith(extension):
+            # Strip extension to get the note name
+            names.add(entry[:-(len(extension))])
+    return names
+
+
+def get_db_note_titles(conn, notebook_guid, export_trash=False):
+    """Get note titles from the database for a notebook."""
+    if export_trash:
+        cursor = conn.execute(
+            "select title from notes where notebook_guid=? order by title COLLATE NOCASE",
+            (notebook_guid,),
+        )
+    else:
+        cursor = conn.execute(
+            "select title from notes where notebook_guid=? and is_active=1 "
+            "order by title COLLATE NOCASE",
+            (notebook_guid,),
+        )
+    return [row[0] for row in cursor]
+
+
+def db_title_to_filename(title):
+    """Convert a DB note title to the filename stem that evernote2obsidian would produce."""
+    return safe_path(title)
+
+
 # ---------------------------------------------------------------------------
-# Main
+# Shared: build notebook rows
 # ---------------------------------------------------------------------------
 
-def main():
-    cfg = load_config()
-
+def build_rows(cfg):
+    """Open the DB, count notes per notebook, return (rows, notebooks_by_name) tuple."""
     db_path = cfg.get("database", "en_backup.db")
     md_folder = cfg.get("output_folder_md", "md")
     html_folder = cfg.get("output_folder_html", "html")
@@ -115,15 +157,10 @@ def main():
         print(f"Error: database not found at {db_path}")
         sys.exit(1)
 
-    print(f"Database:    {db_path}")
-    print(f"MD folder:   {md_folder}")
-    print(f"HTML folder: {html_folder}")
-    print()
-
     conn = sqlite3.connect(db_path)
     notebooks = get_notebook_counts(conn, export_trash)
+    conn.close()
 
-    # Build rows
     rows = []
     for nb in sorted(notebooks, key=lambda x: f"{x['stack'] or ''}{x['name']}".lower()):
         stack = nb["stack"]
@@ -137,6 +174,10 @@ def main():
 
         rows.append({
             "name": display_name,
+            "guid": nb["guid"],
+            "stack": stack,
+            "nb_name": name,
+            "rel_path": rel_path,
             "db": db_count,
             "md": md_count,
             "md_delta": (md_count - db_count) if md_count is not None else None,
@@ -144,19 +185,30 @@ def main():
             "html_delta": (html_count - db_count) if html_count is not None else None,
         })
 
-    conn.close()
+    return rows
 
-    # Split into matched and mismatched
-    # All three counts (db, md, html) must be equal to reconcile
-    def has_mismatch(r):
-        return r["md"] != r["db"] or r["html"] != r["db"]
+
+def has_mismatch(r):
+    """All three counts (db, md, html) must be equal to reconcile."""
+    return r["md"] != r["db"] or r["html"] != r["db"]
+
+
+# ---------------------------------------------------------------------------
+# Table display
+# ---------------------------------------------------------------------------
+
+def show_table(cfg, rows):
+    """Print the reconciliation table."""
+    print(f"Database:    {cfg.get('database', 'en_backup.db')}")
+    print(f"MD folder:   {cfg.get('output_folder_md', 'md')}")
+    print(f"HTML folder: {cfg.get('output_folder_html', 'html')}")
+    print()
 
     matched = [r for r in rows if not has_mismatch(r)]
     mismatched = [r for r in rows if has_mismatch(r)]
 
-    # Column widths
     col_name_w = max(8, max((len(r["name"]) for r in rows), default=0))
-    num_w = 10  # width for numeric columns
+    num_w = 10
 
     def fmt_num(val):
         if val is None:
@@ -183,7 +235,7 @@ def main():
         print("-" * len(header_line))
         return header_line
 
-    def print_row(r):
+    def fmt_row(r):
         return (
             f"{r['name']:<{col_name_w}}  "
             f"{fmt_num(r['db']):>{num_w}}  "
@@ -210,7 +262,7 @@ def main():
     print(f"RECONCILED ({len(matched)} notebooks)")
     header_line = print_header()
     for r in matched:
-        print(print_row(r))
+        print(fmt_row(r))
     print("-" * len(header_line))
     print(subtotal(matched, "Subtotal"))
     print()
@@ -220,7 +272,7 @@ def main():
         print(f"MISMATCHED ({len(mismatched)} notebooks)")
         print_header()
         for r in mismatched:
-            print(print_row(r))
+            print(fmt_row(r))
         print("-" * len(header_line))
         print(subtotal(mismatched, "Subtotal"))
         print()
@@ -246,6 +298,140 @@ def main():
     else:
         print("  All notebook counts match.")
     print()
+
+
+# ---------------------------------------------------------------------------
+# Notebook drill-down: find missing notes between two sources
+# ---------------------------------------------------------------------------
+
+def pick_from_list(prompt, options):
+    """Display a numbered list and let the user pick one."""
+    print(prompt)
+    for i, option in enumerate(options, 1):
+        print(f"  {i}. {option}")
+    print()
+    while True:
+        try:
+            choice = input("Enter number (or q to quit): ").strip()
+            if choice.lower() == "q":
+                return None
+            idx = int(choice) - 1
+            if 0 <= idx < len(options):
+                return idx
+        except (ValueError, EOFError):
+            pass
+        print(f"  Please enter a number between 1 and {len(options)}.")
+
+
+def notebook_drilldown(cfg, rows):
+    """Interactive drill-down into a mismatched notebook to find missing notes."""
+    mismatched = [r for r in rows if has_mismatch(r)]
+
+    if not mismatched:
+        print("All notebooks are reconciled. Nothing to drill into.")
+        return
+
+    # Step 1: pick a notebook
+    nb_names = [f"{r['name']}  (DB:{r['db']}  MD:{r['md']}  HTML:{r['html']})" for r in mismatched]
+    idx = pick_from_list("Select an unreconciled notebook:", nb_names)
+    if idx is None:
+        return
+    nb = mismatched[idx]
+    print()
+
+    # Step 2: pick two sources to compare
+    sources = []
+    if nb["db"] > 0:
+        sources.append("DB")
+    if nb["md"] is not None:
+        sources.append("MD")
+    if nb["html"] is not None:
+        sources.append("HTML")
+
+    if len(sources) < 2:
+        print("Need at least two available sources to compare.")
+        return
+
+    pairs = []
+    for i in range(len(sources)):
+        for j in range(i + 1, len(sources)):
+            pairs.append((sources[i], sources[j]))
+
+    pair_labels = [f"{a} vs {b}" for a, b in pairs]
+    pidx = pick_from_list("Select two sources to compare:", pair_labels)
+    if pidx is None:
+        return
+    source_a, source_b = pairs[pidx]
+    print()
+
+    # Step 3: get note titles from each source
+    db_path = cfg.get("database", "en_backup.db")
+    md_folder = cfg.get("output_folder_md", "md")
+    html_folder = cfg.get("output_folder_html", "html")
+    export_trash = cfg.get("export_trash", False)
+
+    def get_titles(source):
+        if source == "DB":
+            conn = sqlite3.connect(db_path)
+            titles = get_db_note_titles(conn, nb["guid"], export_trash)
+            conn.close()
+            # Convert to the filename-safe form for comparison
+            return set(db_title_to_filename(t) for t in titles)
+        elif source == "MD":
+            return list_files_in_dir(md_folder, nb["rel_path"], ".md")
+        elif source == "HTML":
+            return list_files_in_dir(html_folder, nb["rel_path"], ".html")
+        return set()
+
+    titles_a = get_titles(source_a)
+    titles_b = get_titles(source_b)
+
+    only_in_a = sorted(titles_a - titles_b, key=str.lower)
+    only_in_b = sorted(titles_b - titles_a, key=str.lower)
+
+    print(f"Notebook: {nb['name']}")
+    print(f"Comparing: {source_a} ({len(titles_a)} notes) vs {source_b} ({len(titles_b)} notes)")
+    print()
+
+    if only_in_a:
+        print(f"In {source_a} but not in {source_b} ({len(only_in_a)}):")
+        for title in only_in_a:
+            print(f"  - {title}")
+        print()
+
+    if only_in_b:
+        print(f"In {source_b} but not in {source_a} ({len(only_in_b)}):")
+        for title in only_in_b:
+            print(f"  - {title}")
+        print()
+
+    if not only_in_a and not only_in_b:
+        print("  No differences found (filenames match, count difference may be")
+        print("  due to duplicate titles or filename truncation).")
+        print()
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Reconcile note counts between Evernote backup and export folders."
+    )
+    parser.add_argument(
+        "--nb", action="store_true",
+        help="Drill into a mismatched notebook to find missing notes"
+    )
+    args = parser.parse_args()
+
+    cfg = load_config()
+    rows = build_rows(cfg)
+
+    if args.nb:
+        notebook_drilldown(cfg, rows)
+    else:
+        show_table(cfg, rows)
 
 
 if __name__ == "__main__":
