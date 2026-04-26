@@ -385,11 +385,19 @@ class EvernoteHTMLToMarkdownConverter:
         CENTER     = ":-:"
         RIGHT      = "--:"
 
+        def parse_span(cell, attr):
+            # HTML spec treats invalid colspan/rowspan values as 1; some
+            # real-world notes use values like "100%" that int() rejects.
+            try:
+                return int(cell.get(attr, 1))
+            except (TypeError, ValueError):
+                return 1
+
         # Step 1: Count rows and maximum number of columns
         rows = node.find_all('tr')
         for row in rows:
             cols = row.find_all(["th", "td"])
-            current_cols = sum(int(cell.get("colspan", 1)) for cell in cols)
+            current_cols = sum(parse_span(cell, "colspan") for cell in cols)
             max_cols = max(max_cols, current_cols)
 
         # Step 2: Initialize table grid and row_spans
@@ -420,8 +428,8 @@ class EvernoteHTMLToMarkdownConverter:
                     cell_content = self._process_node_children(cell).rstrip("\n")
                     add_to_grid(col_num, row_num, cell_content, cell)
                     # Skip empty cells (with current alignment) if there is a colspan or rowspan
-                    col_span = int(cell.get("colspan", "1"))
-                    row_span = int(cell.get("rowspan", "1"))
+                    col_span = parse_span(cell, "colspan")
+                    row_span = parse_span(cell, "rowspan")
                     for x in range(col_span):
                         if row_span > 1:
                             row_spans[col_num] += row_span -1
