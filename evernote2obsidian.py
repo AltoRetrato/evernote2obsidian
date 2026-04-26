@@ -24,6 +24,7 @@ import os
 import re
 import json
 import lzma
+import hashlib
 import pickle
 import logging
 import sqlite3
@@ -429,6 +430,35 @@ def safe_path(path):
     return re.sub(invalid_chars, "_", path.strip())
 
 
+def truncate_filename(filename, max_bytes=255):
+    """Truncate a single filename component to fit within the filesystem's
+    per-component byte limit (255 on macOS / most Linux filesystems).
+    Preserves the extension and appends a short hash for uniqueness when
+    truncating, so two long names that share a prefix don't collide.
+    """
+    encoded = filename.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return filename
+
+    if '.' in filename:
+        stem, ext = filename.rsplit('.', 1)
+        ext = '.' + ext
+    else:
+        stem, ext = filename, ''
+
+    hash_suffix  = hashlib.md5(filename.encode("utf-8")).hexdigest()[:8]
+    suffix       = f"_{hash_suffix}{ext}"
+    suffix_bytes = len(suffix.encode("utf-8"))
+
+    max_stem_bytes = max_bytes - suffix_bytes
+    stem_encoded   = stem.encode("utf-8")
+    if len(stem_encoded) > max_stem_bytes:
+        # errors="ignore" trims any partial multi-byte char at the boundary
+        truncated = stem_encoded[:max_stem_bytes].decode("utf-8", errors="ignore")
+        return truncated + suffix
+    return stem + suffix
+
+
 def safe_join(*paths):
     # Apply safe_path() to each argument and then join them
     safe_paths = [safe_path(path) for path in paths if path]
@@ -714,6 +744,13 @@ def get_unique_filename(filename, existing_files):
         unique_filename = f"{name}({counter}){extension}"
         counter += 1
 
+    # Re-truncate the basename if dedup suffixes pushed it back over the limit
+    parts = unique_filename.rsplit("/", 1)
+    if len(parts) == 2:
+        unique_filename = parts[0] + "/" + truncate_filename(parts[1])
+    else:
+        unique_filename = truncate_filename(unique_filename)
+
     return unique_filename
 
 
@@ -834,7 +871,7 @@ class Exporter:
                     continue
 
                 # Create unique RELATIVE note path from notebook and note title
-                safe_name     = safe_path(f"{note.title}{self.note_ext}")
+                safe_name     = truncate_filename(safe_path(f"{note.title}{self.note_ext}"))
                 if cfg["links_with_folders"]:
                     candidate     = posix_join(notebook_path_rel, safe_name)
                     note_path_rel = get_unique_filename(candidate, filenames_set)
@@ -864,7 +901,7 @@ class Exporter:
                         root = "unnamed"
                     if ext.strip() == "" and resource.mime != "application/octet-stream":
                         ext = mime_ext
-                    fn = safe_path(f"{root}{ext}")
+                    fn = truncate_filename(safe_path(f"{root}{ext}"))
 
                     # TO-DO:
                     # - Allow user to select folder for attachments (one per notebook / one per note ?)
