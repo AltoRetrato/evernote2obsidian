@@ -9,6 +9,7 @@
 # This program converts an Evernote backup created with evernote-backup
 # (https://github.com/vzhd1701/evernote-backup) to Obsidian Markdown (or HTML).
 #
+# 2026.08.04  0.1.8, fixed #30 "How about numerical tags?"
 # 2026.03.16  0.1.7, fixed #19 "Preserve notes with duplicate titles"
 # 2026.02.10  0.1.6, fixed #16 "Wrong/Missing image extension"
 # 2026.01.04  0.1.5, improved attachment handling and conversion robustness
@@ -17,7 +18,7 @@
 # 2025.05.23  0.1.0, 1st release
 # 2024.10.08  0.0.1, 1st version
 
-__version__ = "0.1.7"
+__version__ = "0.1.8"
 __author__  = "AltoRetrato"
 
 import os
@@ -93,6 +94,7 @@ class Config(dict):
 max_name_len = 29
 default_cfg  = {}
 option_data  = {}
+TAG_PREFIX = "tag-"
 for option, value, name, help in (
     ("database",           "en_backup.db",      "Database path",                 "Location of your 'evernote-backup' database,\ncreated with 'evernote-backup init-db'."),
     ("output_folder_md",   "md",                "Vault/Markdown output folder",  "Folder where Markdown and attachment files will be exported to."),
@@ -113,6 +115,7 @@ for option, value, name, help in (
     ("first_line_empty",   False,               "Make first note line empty",    "If True, add an empty line at the beginning of the note.\nThis is a cosmetic hack to avoid Obsidian showing code when you open a note in editing view."),
     ("remove_green_link",  False,               "Remove color of green links",   "For a while, Evernote made internal links (links to other notes) green.\nI recommend removing them and using a CSS snippet in Obsidian instead\nif you want all internal links to be green."),
     ("escape_brackets",    False,               "Replace [] with () in links",   "Square brackets [] are special characters in Markdown.\nThey can appear the text portion of your links, but might look a bit odd in Obsidian.\nSet this to True to replace them with parentheses ()."),
+    ("numeric_tag_prefix", TAG_PREFIX,          "Prefix for numeric tags",      f"Prefix added to Evernote numerical tags (which are invalid in Obsidian).\nIf set to an empty string the default prefix ({TAG_PREFIX}) will be used.\nE.g., a tag [2026] would be exported as [{TAG_PREFIX}2026]."),
     ("links_with_folders", True,                "Include folder path in links",  "Obsidian can have multiple notes with the same name in different folders.\nSet this to True to include the folder path in links. This helps avoid confusion when multiple notes share the same name.\nSet this to False to use only the note title in links. This keeps links simpler but may cause conflicts if note names are duplicated."),
     ("notebooks",          None,                "",                              "Notebooks to export"),
 ):
@@ -429,6 +432,13 @@ def safe_path(path):
     return re.sub(invalid_chars, "_", path.strip())
 
 
+def evernote_tag_to_obsidian(tag):
+    tag_name = tag.replace(" ", "-")
+    if tag_name.isnumeric():
+        tag_name = f"{cfg.get('numeric_tag_prefix', TAG_PREFIX)}{tag_name}"
+    return tag_name
+
+
 def safe_join(*paths):
     # Apply safe_path() to each argument and then join them
     safe_paths = [safe_path(path) for path in paths if path]
@@ -634,6 +644,12 @@ def scan_db():
                             issues.append(issue_name)
                 if issues:
                     note_has_issue = issue(f"[{note.title}] Unsupported formatting: {', '.join(issues)}")
+
+            # Check for tags that need conversion for Obsidian.
+            for tag in note.tagNames or []:
+                converted_tag = evernote_tag_to_obsidian(tag)
+                if converted_tag != tag:
+                    note_has_issue = issue(f"[{note.title}] Invalid tag [{tag}]. Rename it in Evernote, or it will be exported as [{converted_tag}]")
 
             # Attachment tests
             for resource in note.resources or []:
@@ -1004,7 +1020,7 @@ class Exporter:
                     if note.tagNames:
                         md_properties.append("tags:")
                         for tag in note.tagNames:
-                            tag_name = tag.replace(" ", "-")
+                            tag_name = evernote_tag_to_obsidian(tag)
                             md_properties.append(f" - {tag_name}")
                     md_properties.append("---\n")
                     md_properties = "\n".join(md_properties)
