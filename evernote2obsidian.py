@@ -37,6 +37,7 @@ from   zoneinfo    import ZoneInfo
 from   posixpath   import join as posix_join, normpath as posix_normpath, abspath as posix_abspath
 from   evernote2md import EvernoteHTMLToMarkdownConverter
 try:
+    import evernote  # Not referenced in this code, but pickle.loads needs it # noqa
     from prompt_toolkit.shortcuts import radiolist_dialog, input_dialog, button_dialog
     from prompt_toolkit.shortcuts.dialogs import  _return_none, _create_app
     from prompt_toolkit.application import Application

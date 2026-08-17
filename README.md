@@ -60,9 +60,9 @@ The main files in this project are:
 
 1. Be sure to have Python 3.9 or newer installed on your system.
 
-2. Install `evernote-backup` (to create a local backup of all your Evernote data) and the `prompt_toolkit` module. Using the Command Prompt:
+2. Install `evernote-backup` (to create a local backup of all your Evernote data), the `prompt_toolkit` module, and the `evernote3` module. Using the Command Prompt:
 ```
-pip install evernote-backup prompt_toolkit
+pip install evernote-backup prompt_toolkit evernote3
 ```
 
 3. Create a new folder and download [evernote2obsidian.py](evernote2obsidian.py) and [evernote2md.py](evernote2md.py) into the folder you just created.
