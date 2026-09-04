@@ -1075,10 +1075,14 @@ class Exporter_HTML(Exporter):
             result = en_media
             type_  = re.findall('type="([^"]+)"', en_media)[0]
             hash_hex = re.findall('hash="([^"]+)"', en_media)[0]
-            hash_int = int(hash_hex, 16)
-
-            # Find the correct path for this attachment in this specific note
-            note_hash_paths = hash_to_paths.get(hash_int, {})
+            try:
+                hash_int = int(hash_hex, 16)
+                # Find the correct path for this attachment in this specific note
+                note_hash_paths = hash_to_paths.get(hash_int, {})
+            except ValueError:
+                # Some notes (e.g. web clips) have non-hex hash values like UUIDs.
+                # Treat as "hash not found" and fall through to the fallback below.
+                note_hash_paths = {}
             path = note_hash_paths.get(note.guid)
 
             if not path:

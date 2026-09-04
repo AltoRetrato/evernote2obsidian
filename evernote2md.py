@@ -526,8 +526,14 @@ class EvernoteHTMLToMarkdownConverter:
             # See https://github.com/AltoRetrato/evernote2obsidian/issues/17
             self.warnings.append(f"Media node without hash: {node}")
             return ""
-        hash_int = int(hash_hex, 16)
-        if not (file_path := self.hash_to_path.get(hash_int)):
+        try:
+            hash_int = int(hash_hex, 16)
+            file_path = self.hash_to_path.get(hash_int)
+        except ValueError:
+            # Some notes (e.g. web clips) have non-hex hash values like UUIDs.
+            # Treat as "hash not found" and fall through to the fallback below.
+            file_path = None
+        if not file_path:
             file_path = hash_hex
             self.warnings.append(f"Path to media hash not found: {hash_hex}")
             # TO-DO: this happened on a few (4?) notes where the media hash
