@@ -385,12 +385,28 @@ class EvernoteHTMLToMarkdownConverter:
         CENTER     = ":-:"
         RIGHT      = "--:"
 
-        # Step 1: Count rows and maximum number of columns
+        # Step 1: Count rows and maximum number of columns.
+        # A row's effective width can exceed any single row's colspan-sum
+        # when an earlier row's rowspan extends into it, so we simulate
+        # cell placement (mirroring Step 3's logic) to track the true width.
         rows = node.find_all('tr')
+        pending = {}  # col -> remaining rowspan count, simulation only
         for row in rows:
             cols = row.find_all(["th", "td"])
-            current_cols = sum(int(cell.get("colspan", 1)) for cell in cols)
-            max_cols = max(max_cols, current_cols)
+            if not cols:
+                continue
+            col_num = 0
+            for cell in cols:
+                while pending.get(col_num, 0) > 0:
+                    pending[col_num] -= 1
+                    col_num += 1
+                col_span = int(cell.get("colspan", 1))
+                row_span = int(cell.get("rowspan", 1))
+                for _ in range(col_span):
+                    if row_span > 1:
+                        pending[col_num] = pending.get(col_num, 0) + (row_span - 1)
+                    col_num += 1
+            max_cols = max(max_cols, col_num)
 
         # Step 2: Initialize table grid and row_spans
         grid = [[{"align":LEFT,"content":""} for _ in range(max_cols)] for _ in range(len(rows))]
